@@ -1,5 +1,6 @@
 const { app, BrowserWindow } = require('electron');
 const path = require('path');
+const { setupIpcHandlers } = require('./ipcHandlers');
 const isDev = !app.isPackaged;
 
 function createWindow() {
@@ -10,19 +11,25 @@ function createWindow() {
             nodeIntegration: false,
             contextIsolation: true,
             enableRemoteModule: false,
-            preload: path.join(__dirname, 'preload.js')
+            preload: path.join(__dirname, 'preload.js'),
+            webSecurity: false,
+            sandbox: false,
         },
     });
 
     if (isDev) {
         mainWindow.loadURL('http://localhost:5173');
-        //mainWindow.webContents.openDevTools();
+        process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true';
+        mainWindow.webContents.openDevTools();
     } else {
         mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
     }
 }
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+    setupIpcHandlers();
+    createWindow();
+});
 
 app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') {

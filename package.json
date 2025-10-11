@@ -1,7 +1,7 @@
 {
   "name": "persona_video_converter",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.0.1",
   "main": "electron/main.js",
   "type": "commonjs",
   "scripts": {
@@ -9,7 +9,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "electron": "electron .",
-    "electron-dev": "concurrently \"npm run dev\" \"wait-on http://localhost:5173 && electron .\"",
+    "electron-dev": "concurrently \"npm run dev\" \"wait-on http://localhost:5173 && electron .\" --kill-others --success first  --enable-logging --v=1",
     "electron-pack": "electron-builder",
     "build-electron": "npm run build && electron-builder"
   },

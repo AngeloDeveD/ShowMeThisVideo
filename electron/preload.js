@@ -1,8 +1,18 @@
-const { contextBridge } = require('electron');
+// electron/preload.js
+const { contextBridge, ipcRenderer } = require('electron');
 
-// Экспонируйте безопасные API для React приложения
 contextBridge.exposeInMainWorld('electronAPI', {
-    // Здесь вы можете добавить функции для взаимодействия с Electron
+    executeCommand: (filePath, region) => ipcRenderer.invoke('execute-command', filePath, region),
+
+    // Новый метод для диалога выбора файла
+    selectFile: () => ipcRenderer.invoke('select-file'),
+
+    // Метод для получения информации о файле
+    getFileInfo: (file) => ipcRenderer.invoke('get-file-info', file),
+
+    getHexParams: (region) => ipcRenderer.invoke('get-hex-params', region),
+
+
     platform: process.platform,
     versions: process.versions,
 });
