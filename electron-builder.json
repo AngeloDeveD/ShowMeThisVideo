@@ -1,0 +1,20 @@
+{
+    "appId": "com.yourname.persona-video-converter",
+    "productName": "Persona Video Converter",
+    "directories": {
+        "output": "release"
+    },
+    "files": [
+        "dist/**/*",
+        "electron/**/*"
+    ],
+    "mac": {
+        "category": "public.app-category.video"
+    },
+    "win": {
+        "target": "nsis"
+    },
+    "linux": {
+        "target": "AppImage"
+    }
+}
