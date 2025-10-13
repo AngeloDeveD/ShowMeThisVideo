@@ -1,12 +1,14 @@
 const { app, BrowserWindow } = require('electron');
 const path = require('path');
 const { setupIpcHandlers } = require('./ipcHandlers');
+const { mainModule } = require('process');
 const isDev = !app.isPackaged;
 
 function createWindow() {
     const mainWindow = new BrowserWindow({
         width: 1200,
         height: 800,
+        title: "Show Me This Video",
         webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,
@@ -24,8 +26,10 @@ function createWindow() {
     } else {
         mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
     }
-}
 
+    mainWindow.setMenuBarVisibility(false);
+    //mainWindow.setMenu(null); -> MacOS
+}
 app.whenReady().then(() => {
     setupIpcHandlers();
     createWindow();

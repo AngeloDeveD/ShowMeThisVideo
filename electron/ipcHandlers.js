@@ -3,129 +3,272 @@ const { ipcMain, dialog, shell } = require('electron');
 const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+const fsPromises = require('fs').promises;
 
 function setupIpcHandlers() {
     // Обработчик выполнения команды
-    ipcMain.handle('execute-command', async (event, filePath, region) => {
-        return new Promise((resolve, reject) => {
-            try {
-                const exePath = path.join(__dirname, '../tools/crid/crid_mod.exe');
+    ipcMain.handle('execute-command', async (event, file, filePath, region, merged) => {
+        try {
+            const fileName = file.name.toString().slice(0, -4);
 
-                console.log('Executing command with:');
-                console.log('EXE path:', exePath);
-                console.log('File path:', filePath);
-                console.log('Region:', region);
+            const decExePath = path.join(__dirname, '../tools/crid/crid_mod.exe');
+            const convExePath = path.join(__dirname, '../tools/ffmpeg/bin/ffmpeg.exe');
+            const resultDir = path.join(__dirname, '../result');
+            const resultFile = path.join(resultDir, fileName);
+            const resultAudio = path.join(resultDir, `${fileName}.adx.wav`);
+            const resultVideo = path.join(resultDir, `${fileName}.m2v`);
+            const mp4ResultFile = path.join(resultDir, `${fileName}.mp4`);
 
-                // Проверяем существование исполняемого файла
-                if (!fs.existsSync(exePath)) {
-                    reject(new Error(`Исполняемый файл не найден: ${exePath}`));
-                    return;
+            console.log('Executing command with:');
+            console.log('Decoder EXE path:', decExePath);
+            console.log('Converter EXE path:', convExePath);
+            console.log('File path:', filePath);
+            console.log('Region:', region);
+            console.log('Merge Video with Audio', merged);
+            console.log(`File name: ${fileName}`);
+
+            // Проверяем существование исполняемого файла
+            if (!fs.existsSync(decExePath)) {
+                throw new Error(`Исполняемый файл не найден: ${decExePath}`);
+            }
+
+            // Проверяем существование входного файла
+            if (!fs.existsSync(filePath)) {
+                throw new Error(`Входной файл не найден: ${filePath}`);
+            }
+
+            // Создаем папку result если ее нет
+            await fsPromises.mkdir(resultDir, { recursive: true });
+
+            console.log('Оба файла существуют, запускаем процесс...');
+
+            const hexParams = getHexParamsForRegion(region);
+
+            if (hexParams.length < 2) {
+                throw new Error(`Недостаточно HEX параметров для региона ${region}. Нужно 2, получено ${hexParams.length}`);
+            }
+
+            const firstHex = hexParams[0];
+            const secondHex = hexParams[1];
+
+            let resultMessage = '';
+            let success = false;
+
+            console.log('File:', file);
+
+            // ВЫПОЛНЯЕМ КОМАНДУ С РАЗНЫМИ ЗНАЧЕНИЯМИ ПАРАМЕТРА -s
+            const sValues = [-1, 0, 1];
+
+            for (const sValue of sValues) {
+                console.log(`\n=== Попытка с параметром -s ${sValue} ===`);
+
+                try {
+                    const first_commandArgs = [
+                        '-b', firstHex,
+                        '-a', secondHex,
+                        '-v', '-x', '-i', '-s', sValue.toString(),
+                        '-c', filePath,
+                        '-o', resultFile,
+                    ];
+
+                    console.log(`Command: ${decExePath} ${first_commandArgs.join(' ')}`);
+
+                    // ЗАПУСКАЕМ CRID_MOD.EXE С ТЕКУЩИМ ЗНАЧЕНИЕМ -s
+                    await new Promise((resolve, reject) => {
+                        const first_process = spawn(decExePath, first_commandArgs, {
+                            cwd: resultDir
+                        });
+
+                        let output = '';
+                        let errorOutput = '';
+
+                        first_process.stdout.on('data', (data) => {
+                            output += data.toString();
+                            console.log('crid stdout:', data.toString());
+                        });
+
+                        first_process.stderr.on('data', (data) => {
+                            errorOutput += data.toString();
+                            console.log('crid stderr:', data.toString());
+                        });
+
+                        first_process.on('close', (code) => {
+                            console.log(`crid процесс завершен с кодом: ${code} (параметр -s ${sValue})`);
+                            if (code === 0) {
+                                resultMessage += `✅ Декодирование успешно с параметром -s ${sValue}\n`;
+                                resolve(output);
+                            } else {
+                                reject(new Error(`❌ crid процесс завершился с кодом ${code} (параметр -s ${sValue})\n${errorOutput}`));
+                            }
+                        });
+
+                        first_process.on('error', (error) => {
+                            console.error('Ошибка crid процесса:', error);
+                            reject(new Error(`Ошибка запуска crid процесса (параметр -s ${sValue}): ${error.message}`));
+                        });
+                    });
+
+                    // ПРОВЕРЯЕМ ЧТО ФАЙЛЫ СОЗДАЛИСЬ
+                    console.log(`Проверяем создание файлов для параметра -s ${sValue}...`);
+
+                    try {
+                        await waitForFile(resultVideo);
+                        await waitForFile(resultAudio);
+
+                        // Если файлы создались успешно, выходим из цикла
+                        console.log(`✅ Успех! Файлы созданы с параметром -s ${sValue}`);
+                        success = true;
+                        resultMessage += `✅ Использован параметр: -s ${sValue}\n`;
+                        break; // ВЫХОДИМ ИЗ ЦИКЛА ПРИ УСПЕХЕ
+
+                    } catch (fileError) {
+                        console.log(`❌ Файлы не созданы с параметром -s ${sValue}, пробуем следующее значение...`);
+                        resultMessage += `❌ Параметр -s ${sValue} не сработал\n`;
+
+                        // ОЧИЩАЕМ НЕПОЛНЫЕ ФАЙЛЫ ПЕРЕД СЛЕДУЮЩЕЙ ПОПЫТКОЙ
+                        await cleanupFiles(resultVideo, resultAudio);
+                    }
+
+                } catch (processError) {
+                    console.log(`❌ Ошибка процесса с параметром -s ${sValue}:`, processError.message);
+                    resultMessage += `❌ Ошибка с параметром -s ${sValue}: ${processError.message}\n`;
+
+                    // ОЧИЩАЕМ НЕПОЛНЫЕ ФАЙЛЫ ПЕРЕД СЛЕДУЮЩЕЙ ПОПЫТКОЙ
+                    await cleanupFiles(resultVideo, resultAudio);
+
+                    // Продолжаем со следующим значением
+                    continue;
                 }
+            }
 
-                // Проверяем существование входного файла
-                if (!fs.existsSync(filePath)) {
-                    reject(new Error(`Входной файл не найден: ${filePath}`));
-                    return;
-                }
+            // ПРОВЕРЯЕМ УСПЕШНОСТЬ ВЫПОЛНЕНИЯ
+            if (!success) {
+                throw new Error(`Все попытки декодирования не удались. Проверьте ключи для региона ${region}\n${resultMessage}`);
+            }
 
-                console.log('Оба файла существуют, запускаем процесс...');
+            // ШАГ 2: Если нужно объединить, запускаем FFmpeg
+            if (merged) {
+                console.log('\n=== Запуск FFmpeg для объединения ===');
 
-                const hexParams = getHexParamsForRegion(region);
-
-                if (hexParams.length < 2) {
-                    reject(new Error(`Недостаточно HEX параметров для региона ${region}. Нужно 2, получено ${hexParams.length}`));
-                    return;
-                }
-
-                const firstHex = hexParams[0];  // Первое значение массива HEX
-                const secondHex = hexParams[1]; // Второе значение массива HEX
-
-                console.log(firstHex, secondHex);
-
-                const commandArgs = [
-                    '-b', firstHex,
-                    '-a', secondHex,
-                    '-v', '-x', '-i', '-s', '-1', '-c',
-                    filePath
+                const second_commandArgs = [
+                    '-i', resultVideo,
+                    '-i', resultAudio,
+                    '-c', 'copy', '-y',
+                    mp4ResultFile
                 ];
 
-                const process = spawn(exePath, commandArgs, {
-                    cwd: path.dirname(exePath)
+                console.log(`FFmpeg command: ${convExePath} ${second_commandArgs.join(' ')}`);
+
+                // ЗАПУСКАЕМ FFMPEG
+                await new Promise((resolve, reject) => {
+                    const second_process = spawn(convExePath, second_commandArgs, {
+                        cwd: resultDir
+                    });
+
+                    let output = '';
+                    let errorOutput = '';
+
+                    second_process.stdout.on('data', (data) => {
+                        output += data.toString();
+                        console.log('ffmpeg stdout:', data.toString());
+                    });
+
+                    second_process.stderr.on('data', (data) => {
+                        errorOutput += data.toString();
+                        console.log('ffmpeg stderr:', data.toString());
+                    });
+
+                    second_process.on('close', (code) => {
+                        console.log('ffmpeg процесс завершен с кодом:', code);
+                        if (code === 0) {
+                            resultMessage += `✅ Видео успешно объединено: ${mp4ResultFile}\n`;
+                            resolve(output);
+                        } else {
+                            reject(new Error(`❌ ffmpeg процесс завершился с кодом ${code}\n${errorOutput}`));
+                        }
+                    });
+
+                    second_process.on('error', (error) => {
+                        console.error('Ошибка ffmpeg процесса:', error);
+                        reject(new Error(`Ошибка запуска ffmpeg процесса: ${error.message}`));
+                    });
                 });
 
-                let output = '';
-                let errorOutput = '';
+                // ПРОВЕРЯЕМ ЧТО MP4 ФАЙЛ СОЗДАЛСЯ
+                await waitForFile(mp4ResultFile);
 
-                process.stdout.on('data', (data) => {
-                    output += data.toString();
-                    console.log('stdout:', data.toString());
-                });
-
-                process.stderr.on('data', (data) => {
-                    errorOutput += data.toString();
-                    console.log('stderr:', data.toString());
-                });
-
-                process.on('close', (code) => {
-                    console.log('Процесс завершен с кодом:', code);
-                    if (code === 0) {
-                        // Открываем папку с исходным файлом
-                        const fileDir = path.dirname(filePath);
-                        shell.openPath(fileDir).then(() => {
-                            console.log(`Папка открыта: ${fileDir}`);
-                        }).catch(err => {
-                            console.error('Ошибка открытия папки:', err);
-                        });
-                        const resultMessage = `✅ Команда выполнена успешно для региона ${region}\nПараметры: -b ${firstHex} -a ${secondHex}\nКод завершения: ${code}\n${output}`;
-                        resolve(resultMessage);
-                    } else {
-                        // Если код завершения не 0 - ошибка
-                        reject(new Error(`❌ Процесс завершился с кодом ${code}\n${errorOutput}`));
-                    }
-                });
-
-                process.on('error', (error) => {
-                    console.error('Ошибка процесса:', error);
-                    reject(new Error(`Ошибка запуска процесса: ${error.message}`));
-                });
-
-            } catch (error) {
-                console.error('Общая ошибка:', error);
-                reject(error);
+                // ОЧИЩАЕМ ВРЕМЕННЫЕ ФАЙЛЫ ПОСЛЕ УСПЕШНОГО ОБЪЕДИНЕНИЯ
+                await cleanupFiles(resultVideo, resultAudio);
             }
-        });
-    });
 
-    ipcMain.handle('get-hex-params', async (event, region) => {
-        try {
-            const hexParams = getHexParamsForRegion(region);
-            return hexParams;
+            // Открываем папку с результатами
+            console.log(`Открываем папку: ${resultDir}`);
+            await shell.openPath(resultDir);
+
+            return resultMessage;
+
         } catch (error) {
-            throw new Error(`Ошибка получения HEX параметров для региона ${region}: ${error.message}`);
+            console.error('Общая ошибка:', error);
+            throw error;
         }
     });
+
+    // ФУНКЦИЯ ДЛЯ ОЖИДАНИЯ СОЗДАНИЯ ФАЙЛА
+    async function waitForFile(filePath, maxAttempts = 10, delay = 1000) {
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                await fsPromises.access(filePath);
+                const stats = await fsPromises.stat(filePath);
+                if (stats.size > 0) {
+                    console.log(`✅ Файл создан: ${path.basename(filePath)} (${stats.size} байт)`);
+                    return true;
+                } else {
+                    console.log(`⚠️ Файл существует но пуст: ${path.basename(filePath)}`);
+                }
+            } catch (error) {
+                console.log(`⏳ Попытка ${attempt}/${maxAttempts}: ${path.basename(filePath)} не найден`);
+            }
+
+            if (attempt < maxAttempts) {
+                await new Promise(resolve => setTimeout(resolve, delay));
+            }
+        }
+
+        throw new Error(`Файл ${path.basename(filePath)} не создан после ${maxAttempts} попыток`);
+    }
+
+    // ФУНКЦИЯ ДЛЯ ОЧИСТКИ ФАЙЛОВ
+    async function cleanupFiles(...filePaths) {
+        for (const filePath of filePaths) {
+            try {
+                await fsPromises.unlink(filePath);
+                console.log(`🧹 Очищен файл: ${path.basename(filePath)}`);
+            } catch (error) {
+                // Игнорируем ошибки если файл не существует
+                if (error.code !== 'ENOENT') {
+                    console.log(`⚠️ Не удалось очистить файл ${path.basename(filePath)}: ${error.message}`);
+                }
+            }
+        }
+    }
 
     // Функция для получения HEX параметров из JSON
     function getHexParamsForRegion(region) {
         try {
-            // Путь к JSON файлу
-            const jsonPath = path.join(__dirname, '../src/keys/video_keys.json');
+            const jsonPath = path.join(__dirname, '../tools/keys/video_keys.json');
 
             if (!fs.existsSync(jsonPath)) {
                 throw new Error(`JSON файл не найден: ${jsonPath}`);
             }
 
-            // Читаем и парсим JSON файл
             const jsonData = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
 
-            // Проверяем существование региона
             if (!jsonData[region]) {
                 throw new Error(`Регион '${region}' не найден в JSON файле`);
             }
 
-            // Получаем HEX параметры
             const hexParams = jsonData[region].HEX;
-            console.log(hexParams);
+            console.log('HEX параметры:', hexParams);
 
             if (!hexParams || !Array.isArray(hexParams)) {
                 throw new Error(`HEX параметры для региона '${region}' не найдены или имеют неверный формат`);
@@ -147,14 +290,13 @@ function setupIpcHandlers() {
         });
 
         if (!result.canceled && result.filePaths.length > 0) {
-            return result.filePaths[0]; // Абсолютный путь
+            return result.filePaths[0];
         }
         return null;
     });
 
     // Обработчик получения информации о файле
     ipcMain.handle('get-file-info', async (event, fileData) => {
-        // Если файл передан через drag&drop, получаем абсолютный путь
         if (fileData && fileData.path) {
             return {
                 name: fileData.name,

@@ -1,5 +1,9 @@
-import { useState, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
+import { useSelector } from "react-redux";
+
+import RegionChoosingComponent from "./regionChosingComponent/regionChoosingComponent";
+import MergeComponent from "./mergeComponent/mergeComponent";
 
 const VideoConverterImport = () => {
     const [file, setFile] = useState(null);
@@ -7,7 +11,11 @@ const VideoConverterImport = () => {
     const [isDragging, setIsDragging] = useState(false);
     const [isProcessing, setIsProcessing] = useState(false);
     const [output, setOutput] = useState('');
-    const [region, setRegion] = useState('JP');
+
+    const settings = useSelector((state) => state.settings);
+    const region = settings.region;
+    const merged = settings.merged;
+
     const navigate = useNavigate();
 
     const getFileName = (filePath) => {
@@ -96,18 +104,20 @@ const VideoConverterImport = () => {
 
         setIsProcessing(true);
         setOutput('🔄 Выполнение команды...');
-        console.log(`Регион: ${region}`);
+        //console.log(`Регион: ${region}`);
 
         try {
-            const result = await window.electronAPI.executeCommand(filePath, region);
+            const result = await window.electronAPI.executeCommand(file, filePath, region, merged);
 
-            setOutput(`✅ Команда выполнена успешно:\n${result}`);
+            setOutput(`✅ Команда выполнена успешно`);
+            console.log(`Успех! ${result}`);
         } catch (error) {
-            setOutput(`❌ Ошибка выполнения команды:\n${error.message}`);
+            setOutput(`❌ Ошибка выполнения команды`);
+            console.error(`Ошибка! ${error.message}`);
         } finally {
             setIsProcessing(false);
         }
-    }, [filePath, region]);
+    }, [filePath, region, merged]);
 
     const handleReset = useCallback(() => {
         setFile(null);
@@ -115,30 +125,20 @@ const VideoConverterImport = () => {
         setOutput('');
     }, []);
 
-    const HandleRegionSelector = useCallback((e) => {
-        setRegion(e.target.value);
-        console.log(e.target.value);
-    });
+    useEffect(() => {
+        file && console.log(`Имя файла: ${file.name}\nПуть файла: ${filePath}`);
+    }, [file, filePath]);
+
+    // const HandleRegionSelector = useCallback((e) => {
+    //     setRegion(e.target.value);
+    //     console.log(e.target.value);
+    // });
 
 
     return (
         <>
-            <div className="">
-                <form>
-                    <label htmlFor="region-selector">Выбранный регион: </label>
-                    <select
-                        name="reg"
-                        id="reg-select"
-                        value={region}
-                        onChange={HandleRegionSelector}
-                    >
-                        <option value="JP">Япония</option>
-                        <option value="CN">Китай</option>
-                        <option value="EFIGS">Европа/США PS4</option>
-                        <option value="Steam">Европа/США Steam</option>
-                    </select>
-                </form>
-            </div>
+            <RegionChoosingComponent />
+            <MergeComponent />
 
             <div style={{ padding: '20px', maxWidth: '800px', margin: '0 auto' }}>
                 <h1>Конвертер .usm файлов</h1>
@@ -165,7 +165,7 @@ const VideoConverterImport = () => {
                         Перетащите .usm файл сюда или нажмите для выбора
                     </p>
                     <p style={{ color: '#666', fontSize: '14px' }}>
-                        Поддерживаются файлы .usm, .USM, .Usm и т.д.
+                        Поддерживаются файлы .usm
                     </p>
                 </div>
 
@@ -178,9 +178,13 @@ const VideoConverterImport = () => {
                         marginBottom: '20px',
                         border: '1px solid #4caf50'
                     }}>
-                        <h3>✅ Файл выбран:</h3>
+                        {
+                            output === '' ?
+                                <h3>✅ Файл выбран:</h3> :
+                                <h3>{output}</h3>
+                        }
+
                         <p><strong>Имя:</strong> {file.name}</p>
-                        <p><strong>Полный путь:</strong> {filePath}</p>
 
                         <div style={{ marginTop: '15px', display: 'flex', gap: '10px' }}>
                             <button
@@ -214,23 +218,6 @@ const VideoConverterImport = () => {
                         </div>
                     </div>
 
-                )}
-
-                {/* Вывод результата */}
-                {output && (
-                    <div style={{
-                        backgroundColor: '#f8f9fa',
-                        padding: '15px',
-                        borderRadius: '8px',
-                        marginTop: '20px',
-                        border: '1px solid #dee2e6',
-                        whiteSpace: 'pre-wrap',
-                        fontFamily: 'monospace',
-                        fontSize: '14px'
-                    }}>
-                        <h4>Результат:</h4>
-                        {output}
-                    </div>
                 )}
 
                 <button

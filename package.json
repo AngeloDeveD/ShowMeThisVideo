@@ -14,9 +14,12 @@
     "build-electron": "npm run build && electron-builder"
   },
   "dependencies": {
+    "@reduxjs/toolkit": "^2.9.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
-    "react-router-dom": "^7.9.4"
+    "react-redux": "^9.2.0",
+    "react-router-dom": "^7.9.4",
+    "sass": "^1.93.2"
   },
   "devDependencies": {
     "@types/react": "^19.1.16",
