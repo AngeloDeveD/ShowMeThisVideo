@@ -15,7 +15,7 @@ function setupIpcHandlers() {
             const convExePath = path.join(__dirname, '../tools/ffmpeg/bin/ffmpeg.exe');
             const resultDir = path.join(__dirname, '../result');
             const resultFile = path.join(resultDir, fileName);
-            const resultAudio = path.join(resultDir, `${fileName}.adx.wav`);
+            const resultAudio = path.join(resultDir, `${fileName}.adx${merged ? '.wav' : ''}`);
             const resultVideo = path.join(resultDir, `${fileName}.m2v`);
             const mp4ResultFile = path.join(resultDir, `${fileName}.mp4`);
 
@@ -67,7 +67,7 @@ function setupIpcHandlers() {
                         '-b', firstHex,
                         '-a', secondHex,
                         '-v', '-x', '-i', '-s', sValue.toString(),
-                        '-c', filePath,
+                        ...(merged ? ['-c'] : []), filePath,
                         '-o', resultFile,
                     ];
 

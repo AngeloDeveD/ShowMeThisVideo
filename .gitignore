@@ -12,7 +12,9 @@ dist
 dist-ssr
 *.local
 
-tools/
+ffmpeg.exe*
+ffplay.exe*
+ffprobe.exe*
 
 # Editor directories and files
 .vscode/*
@@ -24,3 +26,5 @@ tools/
 *.njsproj
 *.sln
 *.sw?
+*.ps1
+*.bat

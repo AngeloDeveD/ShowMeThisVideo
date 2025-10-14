@@ -1,0 +1,1 @@
+Due to GitHub's file size limitations (100 MB), the FFmpeg archive is included in the release assets instead of the main repository.
