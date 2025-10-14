@@ -32,7 +32,7 @@ Examples
 Output files
 ------------
 - Audio:  <USM name>.audio{N}.hca
-  Inside you may find HCA / ADX / AIX / PCM. The extension remains .bin, just like VGMToolbox.
+  Inside you may find HCA / ADX / AIX / PCM. The extension remains .hca, just like VGMToolbox.
 
 License / Notes
 ---------------

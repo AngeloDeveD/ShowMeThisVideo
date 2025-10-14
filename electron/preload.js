@@ -12,6 +12,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     getHexParams: (region) => ipcRenderer.invoke('get-hex-params', region),
 
+    openResultDir: () => ipcRenderer.invoke('open-result-dir'),
+
+    onProgress: (cb) => {
+        const handler = (_e, data) => cb?.(data);
+        ipcRenderer.on('task-progress', handler);
+        // вернуть функцию отписки — красиво и безопасно
+        return () => ipcRenderer.removeListener('task-progress', handler);
+    },
+
     platform: process.platform,
     versions: process.versions,
 });

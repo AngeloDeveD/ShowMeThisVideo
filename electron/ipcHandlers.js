@@ -8,16 +8,45 @@ const fsPromises = require('fs').promises;
 function setupIpcHandlers() {
     // Обработчик выполнения команды
     ipcMain.handle('execute-command', async (event, file, filePath, region, merged) => {
+        // helper: отправка прогресса
+        const sendProgress = (percent, message) => {
+            try { event.sender.send('task-progress', { percent, message }); } catch { }
+        };
         try {
-            const fileName = file.name.toString().slice(0, -4);
-
-            const decExePath = path.join(__dirname, '../tools/crid/crid_mod.exe');
-            const convExePath = path.join(__dirname, '../tools/ffmpeg/bin/ffmpeg.exe');
+            const fileName = file.name.toString().replace(/\.[^.]+$/, ''); // USMXXX
+            const tooldir = path.join(__dirname, '../tools');
             const resultDir = path.join(__dirname, '../result');
-            const resultFile = path.join(resultDir, fileName);
-            const resultAudio = path.join(resultDir, `${fileName}.adx${merged ? '.wav' : ''}`);
-            const resultVideo = path.join(resultDir, `${fileName}.m2v`);
-            const mp4ResultFile = path.join(resultDir, `${fileName}.mp4`);
+
+            const decExePath = path.join(tooldir, './crid/crid_mod.exe');                 // видео из .usm
+            const convExePath = path.join(tooldir, './ffmpeg/bin/ffmpeg.exe');             // ffmpeg
+            const usmAudioCli = path.join(tooldir, './UsmAudioCli/UsmAudioCli.exe');       // .hca из .usm
+            const hca2wav = path.join(tooldir, './deretore-toolkit/hca2wav.exe');      // .hca -> .wav
+
+            const resultFile = path.join(resultDir, fileName);           // базовый префикс для crid_mod
+            const resultVideo = path.join(resultDir, `${fileName}.m2v`);  // видео от crid_mod
+
+            // HCA цели после переименования (расширение сохраняем .hca)
+            const euHca = path.join(resultDir, `${fileName}_EU.hca`);
+            const jpHca = path.join(resultDir, `${fileName}_JP.hca`);
+            // WAV, которые мы хотим получить (в идеале hca2wav делает именно так)
+            const euWavWanted = path.join(resultDir, `${fileName}_EU.wav`);
+            const jpWavWanted = path.join(resultDir, `${fileName}_JP.wav`);
+
+            const euMp4 = path.join(resultDir, `${fileName}_EU.mp4`);
+            const jpMp4 = path.join(resultDir, `${fileName}_JP.mp4`);
+
+            let logMsg = '';
+
+            const deleteIfExists = async (p) => {
+                try { await fsPromises.unlink(p); console.log('Удалён:', path.basename(p)); }
+                catch (e) { if (e.code !== 'ENOENT') console.warn('Не удалось удалить', p, e.message); }
+            };
+
+            sendProgress(2, 'Подготовка...');
+            // --- проверки
+            if (!fs.existsSync(decExePath)) throw new Error(`Не найден crid_mod: ${decExePath}`);
+            if (!fs.existsSync(filePath)) throw new Error(`Входной файл не найден: ${filePath}`);
+            await fsPromises.mkdir(resultDir, { recursive: true });
 
             console.log('Executing command with:');
             console.log('Decoder EXE path:', decExePath);
@@ -27,191 +56,210 @@ function setupIpcHandlers() {
             console.log('Merge Video with Audio', merged);
             console.log(`File name: ${fileName}`);
 
-            // Проверяем существование исполняемого файла
-            if (!fs.existsSync(decExePath)) {
-                throw new Error(`Исполняемый файл не найден: ${decExePath}`);
-            }
+            // --- 1) ВИДЕО: crid_mod (только .m2v)
+            const [hexA, hexB] = getHexParamsForRegion(region); // порядок: A, B
+            let videoOk = false;
 
-            // Проверяем существование входного файла
-            if (!fs.existsSync(filePath)) {
-                throw new Error(`Входной файл не найден: ${filePath}`);
-            }
+            const cridArgs = ['-b', hexA, '-a', hexB, '-v', filePath, '-o', resultFile];
+            console.log(`Command: ${decExePath} ${cridArgs.join(' ')}`);
+            sendProgress(8, 'Декодируем видео...');
 
-            // Создаем папку result если ее нет
-            await fsPromises.mkdir(resultDir, { recursive: true });
-
-            console.log('Оба файла существуют, запускаем процесс...');
-
-            const hexParams = getHexParamsForRegion(region);
-
-            if (hexParams.length < 2) {
-                throw new Error(`Недостаточно HEX параметров для региона ${region}. Нужно 2, получено ${hexParams.length}`);
-            }
-
-            const firstHex = hexParams[0];
-            const secondHex = hexParams[1];
-
-            let resultMessage = '';
-            let success = false;
-
-            console.log('File:', file);
-
-            // ВЫПОЛНЯЕМ КОМАНДУ С РАЗНЫМИ ЗНАЧЕНИЯМИ ПАРАМЕТРА -s
-            const sValues = [-1, 0, 1];
-
-            for (const sValue of sValues) {
-                console.log(`\n=== Попытка с параметром -s ${sValue} ===`);
-
-                try {
-                    const first_commandArgs = [
-                        '-b', firstHex,
-                        '-a', secondHex,
-                        '-v', '-x', '-i', '-s', sValue.toString(),
-                        ...(merged ? ['-c'] : []), filePath,
-                        '-o', resultFile,
-                    ];
-
-                    console.log(`Command: ${decExePath} ${first_commandArgs.join(' ')}`);
-
-                    // ЗАПУСКАЕМ CRID_MOD.EXE С ТЕКУЩИМ ЗНАЧЕНИЕМ -s
-                    await new Promise((resolve, reject) => {
-                        const first_process = spawn(decExePath, first_commandArgs, {
-                            cwd: resultDir
-                        });
-
-                        let output = '';
-                        let errorOutput = '';
-
-                        first_process.stdout.on('data', (data) => {
-                            output += data.toString();
-                            console.log('crid stdout:', data.toString());
-                        });
-
-                        first_process.stderr.on('data', (data) => {
-                            errorOutput += data.toString();
-                            console.log('crid stderr:', data.toString());
-                        });
-
-                        first_process.on('close', (code) => {
-                            console.log(`crid процесс завершен с кодом: ${code} (параметр -s ${sValue})`);
-                            if (code === 0) {
-                                resultMessage += `✅ Декодирование успешно с параметром -s ${sValue}\n`;
-                                resolve(output);
-                            } else {
-                                reject(new Error(`❌ crid процесс завершился с кодом ${code} (параметр -s ${sValue})\n${errorOutput}`));
-                            }
-                        });
-
-                        first_process.on('error', (error) => {
-                            console.error('Ошибка crid процесса:', error);
-                            reject(new Error(`Ошибка запуска crid процесса (параметр -s ${sValue}): ${error.message}`));
-                        });
-                    });
-
-                    // ПРОВЕРЯЕМ ЧТО ФАЙЛЫ СОЗДАЛИСЬ
-                    console.log(`Проверяем создание файлов для параметра -s ${sValue}...`);
-
-                    try {
-                        await waitForFile(resultVideo);
-                        await waitForFile(resultAudio);
-
-                        // Если файлы создались успешно, выходим из цикла
-                        console.log(`✅ Успех! Файлы созданы с параметром -s ${sValue}`);
-                        success = true;
-                        resultMessage += `✅ Использован параметр: -s ${sValue}\n`;
-                        break; // ВЫХОДИМ ИЗ ЦИКЛА ПРИ УСПЕХЕ
-
-                    } catch (fileError) {
-                        console.log(`❌ Файлы не созданы с параметром -s ${sValue}, пробуем следующее значение...`);
-                        resultMessage += `❌ Параметр -s ${sValue} не сработал\n`;
-
-                        // ОЧИЩАЕМ НЕПОЛНЫЕ ФАЙЛЫ ПЕРЕД СЛЕДУЮЩЕЙ ПОПЫТКОЙ
-                        await cleanupFiles(resultVideo, resultAudio);
-                    }
-
-                } catch (processError) {
-                    console.log(`❌ Ошибка процесса с параметром -s ${sValue}:`, processError.message);
-                    resultMessage += `❌ Ошибка с параметром -s ${sValue}: ${processError.message}\n`;
-
-                    // ОЧИЩАЕМ НЕПОЛНЫЕ ФАЙЛЫ ПЕРЕД СЛЕДУЮЩЕЙ ПОПЫТКОЙ
-                    await cleanupFiles(resultVideo, resultAudio);
-
-                    // Продолжаем со следующим значением
-                    continue;
-                }
-            }
-
-            // ПРОВЕРЯЕМ УСПЕШНОСТЬ ВЫПОЛНЕНИЯ
-            if (!success) {
-                throw new Error(`Все попытки декодирования не удались. Проверьте ключи для региона ${region}\n${resultMessage}`);
-            }
-
-            // ШАГ 2: Если нужно объединить, запускаем FFmpeg
-            if (merged) {
-                console.log('\n=== Запуск FFmpeg для объединения ===');
-
-                const second_commandArgs = [
-                    '-i', resultVideo,
-                    '-i', resultAudio,
-                    '-c', 'copy', '-y',
-                    mp4ResultFile
-                ];
-
-                console.log(`FFmpeg command: ${convExePath} ${second_commandArgs.join(' ')}`);
-
-                // ЗАПУСКАЕМ FFMPEG
+            try {
                 await new Promise((resolve, reject) => {
-                    const second_process = spawn(convExePath, second_commandArgs, {
-                        cwd: resultDir
-                    });
-
-                    let output = '';
-                    let errorOutput = '';
-
-                    second_process.stdout.on('data', (data) => {
-                        output += data.toString();
-                        console.log('ffmpeg stdout:', data.toString());
-                    });
-
-                    second_process.stderr.on('data', (data) => {
-                        errorOutput += data.toString();
-                        console.log('ffmpeg stderr:', data.toString());
-                    });
-
-                    second_process.on('close', (code) => {
-                        console.log('ffmpeg процесс завершен с кодом:', code);
-                        if (code === 0) {
-                            resultMessage += `✅ Видео успешно объединено: ${mp4ResultFile}\n`;
-                            resolve(output);
-                        } else {
-                            reject(new Error(`❌ ffmpeg процесс завершился с кодом ${code}\n${errorOutput}`));
-                        }
-                    });
-
-                    second_process.on('error', (error) => {
-                        console.error('Ошибка ffmpeg процесса:', error);
-                        reject(new Error(`Ошибка запуска ffmpeg процесса: ${error.message}`));
-                    });
+                    const p = spawn(decExePath, cridArgs, { cwd: resultDir });
+                    let out = '', err = '';
+                    p.stdout.on('data', d => { out += d.toString(); console.log('crid stdout:', d.toString()); });
+                    p.stderr.on('data', d => { err += d.toString(); console.log('crid stderr:', d.toString()); });
+                    p.on('close', code => code === 0 ? resolve(out) : reject(new Error(`crid_mod код ${code}\n${err || out}`)));
+                    p.on('error', e => reject(new Error(`Ошибка запуска crid_mod: ${e.message}`)));
                 });
 
-                // ПРОВЕРЯЕМ ЧТО MP4 ФАЙЛ СОЗДАЛСЯ
-                await waitForFile(mp4ResultFile);
+                await waitForFile(resultVideo);
+                console.log(`Файл создан: ${path.basename(resultVideo)}`);
+                logMsg += 'Видео успешно декодировано\n';
+                videoOk = true;
+            } catch (e) {
+                await cleanupFiles(resultVideo);
+                throw e;
+            }
+            sendProgress(25, 'Видео готово');
 
-                // ОЧИЩАЕМ ВРЕМЕННЫЕ ФАЙЛЫ ПОСЛЕ УСПЕШНОГО ОБЪЕДИНЕНИЯ
-                await cleanupFiles(resultVideo, resultAudio);
+            // --- 2) АУДИО: UsmAudioCli -> получаем 1-2 .hca, затем переименовываем в USMXXX_EU/JP.hca
+            if (fs.existsSync(usmAudioCli)) {
+                const audioArgs = [filePath, '--out', resultDir, '--audio', '--split'];
+                console.log(`UsmAudioCli: ${usmAudioCli} ${audioArgs.join(' ')}`);
+
+                sendProgress(28, 'Извлекаем аудио...');
+                await new Promise((resolve, reject) => {
+                    const p = spawn(usmAudioCli, audioArgs, { cwd: resultDir });
+                    let out = '', err = '';
+                    p.stdout.on('data', d => { out += d.toString(); console.log('UsmAudioCli stdout:', d.toString()); });
+                    p.stderr.on('data', d => { err += d.toString(); console.log('UsmAudioCli stderr:', d.toString()); });
+                    p.on('close', code => code === 0 ? resolve(out) : reject(new Error(`UsmAudioCli код ${code}\n${err || out}`)));
+                    p.on('error', e => reject(new Error(`Ошибка запуска UsmAudioCli: ${e.message}`)));
+                });
+
+                sendProgress(32, 'Определяем дорожки EU/JP...');
+                // Переименовываем .hca (оставляем .hca)
+                const entries = await fsPromises.readdir(resultDir, { withFileTypes: true });
+                const hcaFiles = entries
+                    .filter(e => e.isFile())
+                    .map(e => e.name)
+                    .filter(n => n.toLowerCase().endsWith('.hca'));
+
+                let renamed = 0;
+                for (const name of hcaFiles) {
+                    // MOV004_40534641.hca — берём вторую цифру после "_"
+                    const m = /^(.+?)_(\d{2,})\.hca$/i.exec(name);
+                    if (!m) continue;
+                    const digits = m[2];
+                    const secondChar = digits.charAt(1); // '0' | '1'
+                    let tag = null;
+                    if (secondChar === '0') tag = 'EU';
+                    else if (secondChar === '1') tag = 'JP';
+                    if (!tag) continue;
+
+                    const oldPath = path.join(resultDir, name);
+                    const newPath = path.join(resultDir, `${fileName}_${tag}.hca`);
+                    if (fs.existsSync(newPath)) await fsPromises.unlink(newPath);
+                    await fsPromises.rename(oldPath, newPath);
+                    console.log(`Переименован: ${name} -> ${path.basename(newPath)}`);
+                    renamed++;
+                }
+                logMsg += `Переименовано .hca: ${renamed}\n`;
+            } else {
+                console.warn(`UsmAudioCli не найден: ${usmAudioCli} — извлечение аудио пропущено`);
             }
 
-            // Открываем папку с результатами
-            console.log(`Открываем папку: ${resultDir}`);
+            // --- 3) .hca → .wav: hca2wav -b hexA -a hexB <HCA>
+            // функция возвращает фактический путь к WAV, который появился
+            async function hcaToWav(hcaPath, wantedWavPath, label) {
+                if (!fs.existsSync(hcaPath)) return null;
+                if (!fs.existsSync(hca2wav)) throw new Error(`Не найден hca2wav: ${hca2wav}`);
+
+                sendProgress(label === 'EU' ? 50 : 60, `Расшифровываем ${label} аудио...`);
+                const args = ['-b', hexA, '-a', hexB, hcaPath];
+                console.log(`hca2wav: ${hca2wav} ${args.join(' ')}`);
+
+                // время запуска — чтобы потом найти «свежий» WAV, если имя отличается
+                const startTs = Date.now();
+
+                await new Promise((resolve, reject) => {
+                    const p = spawn(hca2wav, args, { cwd: resultDir });
+                    let out = '', err = '';
+                    p.stdout.on('data', d => { out += d.toString(); console.log('hca2wav stdout:', d.toString()); });
+                    p.stderr.on('data', d => { err += d.toString(); console.log('hca2wav stderr:', d.toString()); });
+                    p.on('close', code => code === 0 ? resolve(out) : reject(new Error(`hca2wav код ${code}\n${err || out}`)));
+                    p.on('error', e => reject(new Error(`Ошибка запуска hca2wav: ${e.message}`)));
+                });
+
+                // 1) ожидаем «хотелку»
+                try {
+                    await waitForFile(wantedWavPath, 5, 400);
+                    return wantedWavPath;
+                } catch { }
+
+                // 2) часто тулза пишет рядом с .hca, просто заменяя расширение
+                const expectedByReplace = hcaPath.replace(/\.hca$/i, '.wav');
+                if (fs.existsSync(expectedByReplace)) {
+                    return expectedByReplace;
+                }
+
+                // 3) иной тулзы добавляют ".wav" к исходному имени
+                const expectedByAppend = `${hcaPath}.wav`;
+                if (fs.existsSync(expectedByAppend)) {
+                    return expectedByAppend;
+                }
+
+                // 4) как последний шанс — возьмём самый свежий .wav в resultDir после старта
+                const files = await fsPromises.readdir(resultDir);
+                let latest = null; let latestMtime = 0;
+                for (const n of files.filter(n => n.toLowerCase().endsWith('.wav'))) {
+                    const p = path.join(resultDir, n);
+                    const st = await fsPromises.stat(p);
+                    if (st.mtimeMs >= startTs && st.size > 0 && st.mtimeMs > latestMtime) {
+                        latest = p; latestMtime = st.mtimeMs;
+                    }
+                }
+                if (latest) return latest;
+
+                throw new Error(`WAV не найден после hca2wav для ${path.basename(hcaPath)}`);
+            }
+
+            if (merged === true) {
+                const euWavPath = await hcaToWav(euHca, euWavWanted, 'EU').catch(e => { console.warn(e.message); return null; });
+                const jpWavPath = await hcaToWav(jpHca, jpWavWanted, 'JP').catch(e => { console.warn(e.message); return null; });
+
+                async function muxToMp4(audioWavPath, outMp4, label) {
+                    if (!audioWavPath || !fs.existsSync(audioWavPath)) return false;
+                    sendProgress(label === 'EU' ? 70 : 80, `Собираем ${label}.mp4...`);
+                    const args = [
+                        '-y',
+                        '-i', resultVideo,
+                        '-i', audioWavPath,
+                        '-map', '0:v:0',
+                        '-map', '1:a:0',
+                        '-c:v', 'libx264',
+                        '-preset', 'medium',
+                        '-crf', '18',
+                        '-c:a', 'aac',
+                        '-b:a', '192k',
+                        '-movflags', '+faststart',
+                        '-shortest',
+                        outMp4
+                    ];
+                    console.log(`FFmpeg: ${path.basename(resultVideo)} + ${path.basename(audioWavPath)} -> ${path.basename(outMp4)}`);
+                    await new Promise((resolve, reject) => {
+                        const p = spawn(convExePath, args, { cwd: resultDir });
+                        let out = '', err = '';
+                        p.stdout.on('data', d => { out += d.toString(); console.log('ffmpeg stdout:', d.toString()); });
+                        p.stderr.on('data', d => { err += d.toString(); console.log('ffmpeg stderr:', d.toString()); });
+                        p.on('close', code => code === 0 ? resolve(out) : reject(new Error(`ffmpeg код ${code}\n${err || out}`)));
+                        p.on('error', e => reject(new Error(`Ошибка запуска ffmpeg: ${e.message}`)));
+                    });
+                    await waitForFile(outMp4, 10, 400);
+                    console.log('Готово:', path.basename(outMp4));
+                    return true;
+                }
+
+                const madeEUmp4 = await muxToMp4(euWavPath, euMp4, 'EU'); // 1) EU
+                const madeJPmp4 = await muxToMp4(jpWavPath, jpMp4, 'JP'); // 2) JP
+
+                if (madeEUmp4) logMsg += `Собрано: ${path.basename(euMp4)}\n`;
+                if (madeJPmp4) logMsg += `Собрано: ${path.basename(jpMp4)}\n`;
+                if (!madeEUmp4 && !madeJPmp4) logMsg += 'EU/JP дорожки не найдены — mp4 не собраны\n';
+
+                sendProgress(92, 'Очистка временных файлов...');
+                // --- ЧИСТКА: только файлы с этим же базовым именем
+                await deleteIfExists(resultVideo);     // USMXXX.m2v
+                await deleteIfExists(euHca);           // USMXXX_EU.hca
+                await deleteIfExists(jpHca);           // USMXXX_JP.hca
+                await deleteIfExists(euWavWanted);     // USMXXX_EU.wav (если именно так назван)
+                await deleteIfExists(jpWavWanted);     // USMXXX_JP.wav
+                // на случай альтернативного имени от hca2wav:
+                await deleteIfExists(euHca.replace(/\.hca$/i, '.wav'));
+                await deleteIfExists(jpHca.replace(/\.hca$/i, '.wav'));
+                await deleteIfExists(`${euHca}.wav`);
+                await deleteIfExists(`${jpHca}.wav`);
+
+            } else {
+                // --- merged === false: МЕРЖА НЕТ, чистим только .hca с текущим именем
+                sendProgress(45, 'Очистка .hca (merged=false)...');
+                await deleteIfExists(euHca);
+                await deleteIfExists(jpHca);
+                logMsg += 'Собранный mp4 не требуется (merged=false). Удалены только .hca\n';
+            }
+            sendProgress(100, 'Готово');
+
             await shell.openPath(resultDir);
+            return logMsg.trim();
 
-            return resultMessage;
-
-        } catch (error) {
-            console.error('Общая ошибка:', error);
-            throw error;
+        } catch (err) {
+            console.error('Общая ошибка:', err);
+            throw err;
         }
     });
+
 
     // ФУНКЦИЯ ДЛЯ ОЖИДАНИЯ СОЗДАНИЯ ФАЙЛА
     async function waitForFile(filePath, maxAttempts = 10, delay = 1000) {
@@ -279,6 +327,13 @@ function setupIpcHandlers() {
             throw error;
         }
     }
+
+    ipcMain.handle('open-result-dir', async () => {
+        const resultPath = path.join(__dirname, '../result');
+        await shell.openPath(resultPath).catch((e) => console.error("Директория не найдена", e));
+        console.log("Директория открыта")
+        return null;
+    })
 
     // Обработчик выбора файла через диалог
     ipcMain.handle('select-file', async () => {

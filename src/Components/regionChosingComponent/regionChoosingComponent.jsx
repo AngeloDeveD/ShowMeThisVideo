@@ -1,11 +1,14 @@
 import { useEffect } from "react";
 import { useSelector, useDispatch } from "react-redux";
 import { setRegion } from "../../store/splices/settingsSlice";
+import { useTranslation } from "react-i18next";
 
 export default function RegionChoosingComponent() {
 
     const settings = useSelector((state) => state.settings);
     const dispatch = useDispatch();
+
+    const { t } = useTranslation();
 
     const region = settings.region;
 
@@ -20,18 +23,19 @@ export default function RegionChoosingComponent() {
     return (
         <>
             <div className="">
-                <form>
-                    <label htmlFor="region-selector">Выбранный регион: </label>
+                <form className="RegionForm">
+                    <label htmlFor="region-selector">{`${t("ChoosedRegion")}: `}</label>
                     <select
                         name="reg"
                         id="reg-select"
                         value={settings.region}
                         onChange={HandleRegionSelector}
+                        className="RegionForm__select"
                     >
-                        <option value="JP">Япония</option>
-                        <option value="CN">Китай</option>
-                        <option value="EFIGS">Европа/США PS4</option>
-                        <option value="Steam">Европа/США Steam</option>
+                        <option value="JP">{t("Japan")}</option>
+                        <option value="CN">{t("China")}</option>
+                        <option value="EFIGS">{`${t("EU/US")} PS4`}</option>
+                        <option value="Steam">{`${t("EU/US")} Steam`}</option>
                     </select>
                 </form>
             </div>
