@@ -193,23 +193,48 @@ function setupIpcHandlers() {
                 async function muxToMp4(audioWavPath, outMp4, label) {
                     if (!audioWavPath || !fs.existsSync(audioWavPath)) return false;
                     sendProgress(label === 'EU' ? 70 : 80, `Собираем ${label}.mp4...`);
-                    const args = [
-                        '-y',
-                        '-i', resultVideo,
-                        '-i', audioWavPath,
-                        '-map', '0:v:0',
-                        '-map', '1:a:0',
-                        '-c:v', 'libx264',
-                        '-preset', 'medium',
-                        '-crf', '18',
-                        '-c:a', 'aac',
-                        '-b:a', '192k',
-                        '-movflags', '+faststart',
-                        '-shortest',
-                        outMp4
-                    ];
-                    console.log(`FFmpeg: ${path.basename(resultVideo)} + ${path.basename(audioWavPath)} -> ${path.basename(outMp4)}`);
-                    await new Promise((resolve, reject) => {
+
+                    // Базовые аргументы с «безопасными» настройками по памяти.
+                    const makeArgs = (opts = {}) => {
+                        const {
+                            preset = 'medium',     // было 'medium' — потребляет больше RAM
+                            crf = '18',
+                            threads = '6',         // ограничиваем, иначе x264 сам возьмёт 24
+                            rcLookahead = '30',    // меньше буфера — меньше RAM
+                        } = opts;
+
+                        return [
+                            '-y',
+                            '-i', resultVideo,          // видео (у вас .m2v, но по факту IVF/VP9 — ffmpeg корректно пробует)
+                            '-i', audioWavPath,         // аудио WAV
+
+                            // маппинг дорожек
+                            '-map', '0:v:0',
+                            '-map', '1:a:0',
+
+                            // видео → H.264
+                            '-c:v', 'libx264',
+                            '-preset', preset,
+                            '-crf', crf,
+                            '-pix_fmt', 'yuv420p',
+                            //'-threads:v', threads,                  // ограничиваем потоки у кодера
+                            //'-x264-params', `rc-lookahead=${rcLookahead}:sync-lookahead=0`,
+
+                            // аудио → AAC
+                            '-c:a', 'aac',
+                            '-b:a', '192k',
+
+                            // контейнер и удобство проигрывания
+                            '-movflags', '+faststart',
+                            '-shortest',
+
+                            outMp4,
+                        ];
+                    };
+
+                    // Вспомогательная обёртка запуска
+                    const runFfmpeg = (args) => new Promise((resolve, reject) => {
+                        console.log(`FFmpeg: ${path.basename(resultVideo)} + ${path.basename(audioWavPath)} -> ${path.basename(outMp4)}`);
                         const p = spawn(convExePath, args, { cwd: resultDir });
                         let out = '', err = '';
                         p.stdout.on('data', d => { out += d.toString(); console.log('ffmpeg stdout:', d.toString()); });
@@ -217,9 +242,21 @@ function setupIpcHandlers() {
                         p.on('close', code => code === 0 ? resolve(out) : reject(new Error(`ffmpeg код ${code}\n${err || out}`)));
                         p.on('error', e => reject(new Error(`Ошибка запуска ffmpeg: ${e.message}`)));
                     });
-                    await waitForFile(outMp4, 10, 400);
-                    console.log('Готово:', path.basename(outMp4));
-                    return true;
+
+                    try {
+                        // 1-я попытка: «умеренно экономный» профиль
+                        await runFfmpeg(makeArgs({ preset: 'faster', crf: '18', threads: '4', rcLookahead: '16' }));
+                        await waitForFile(outMp4, 10, 400);
+                        console.log('Готово:', path.basename(outMp4));
+                        return true;
+                    } catch (e1) {
+                        console.warn('FFmpeg упал на первом профиле, пробуем ещё раз с сильно урезанными требованиями...', e1.message);
+                        // 2-я попытка: ещё более лёгкий профиль
+                        await runFfmpeg(makeArgs({ preset: 'veryfast', crf: '20', threads: '2', rcLookahead: '10' }));
+                        await waitForFile(outMp4, 10, 400);
+                        console.log('Готово (fallback):', path.basename(outMp4));
+                        return true;
+                    }
                 }
 
                 const madeEUmp4 = await muxToMp4(euWavPath, euMp4, 'EU'); // 1) EU

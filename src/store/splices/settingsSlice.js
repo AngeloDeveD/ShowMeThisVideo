@@ -6,6 +6,7 @@ const initialState = {
     language: 'ru',
     region: 'jp',
     merged: false,
+    personaChoose: 'P5R',
 };
 
 const settingsSlice = createSlice({
@@ -21,6 +22,9 @@ const settingsSlice = createSlice({
         setMerged: (state, action) => {
             state.merged = action.payload;
         },
+        setPersonaGame: (state, action) => {
+            state.personaChoose = action.payload;
+        },
         resetSettings: () => initialState,
     },
 });
@@ -29,6 +33,7 @@ export const {
     setLanguage,
     setRegion,
     setMerged,
+    setPersonaGame,
     resetSettings,
 } = settingsSlice.actions;
 

@@ -2,7 +2,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
-    executeCommand: (file, filePath, region, merged) => ipcRenderer.invoke('execute-command', file, filePath, region, merged),
+    executeCommand: (file, filePath, region, merged, personaChoose) => ipcRenderer.invoke('execute-command', file, filePath, region, merged, personaChoose),
 
     // Новый метод для диалога выбора файла
     selectFile: () => ipcRenderer.invoke('select-file'),
@@ -13,6 +13,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getHexParams: (region) => ipcRenderer.invoke('get-hex-params', region),
 
     openResultDir: () => ipcRenderer.invoke('open-result-dir'),
+
+    openExternal: (url) => ipcRenderer.invoke('open-url-browser', url),
 
     onProgress: (cb) => {
         const handler = (_e, data) => cb?.(data);

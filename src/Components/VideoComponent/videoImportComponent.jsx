@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 
 import RegionChoosingComponent from "../regionChosingComponent/regionChoosingComponent";
 import MergeComponent from "../mergeComponent/mergeComponent";
+import PersonaChoosing from "../personaChoosing/personaChoosing";
 import "./videoImportComponent.scss";
 
 const STALL_MS = 3000;       // считаем, что застрял, если нет реального апдейта ≥ 3с
@@ -17,6 +18,8 @@ const VideoConverterImport = () => {
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [output, setOutput] = useState('');
+
+  const [urlInfo, setUrlInfo] = useState('https://amicitia.miraheze.org/wiki/Persona_5_Royal/ps4_movieR.cpk')
 
   const [progress, setProgressRef] = useState(0);
   const [status, setStatus] = useState('');
@@ -33,6 +36,7 @@ const VideoConverterImport = () => {
   const settings = useSelector((state) => state.settings);
   const region = settings.region;
   const merged = settings.merged;
+  const personaChoose = settings.personaChoose;
 
   const navigate = useNavigate();
 
@@ -142,6 +146,8 @@ const VideoConverterImport = () => {
       return;
     }
 
+    console.log(`Version Choosed: ${personaChoose}`);
+
     setIsProcessing(true);
     setOutput(`🔄 ${t("ExecutingACommand")}...`);
     resetProgressState();
@@ -149,7 +155,7 @@ const VideoConverterImport = () => {
     setStatus(`${t("StatusStart")}...`);
 
     try {
-      const result = await window.electronAPI.executeCommand(file, filePath, region, merged);
+      const result = await window.electronAPI.executeCommand(file, filePath, region, merged, personaChoose);
       setStatus(`${t("StatusDone")}`);
       setProgressRef(100);
       setOutput(`✅ ${t("CommandCompletedSuccessfully")}`);
@@ -163,7 +169,7 @@ const VideoConverterImport = () => {
       setIsProcessing(false);
       clearTimers();
     }
-  }, [filePath, region, merged, resetProgressState, clearTimers]);
+  }, [filePath, region, merged, personaChoose, resetProgressState, clearTimers]);
 
   const openResultFolder = useCallback(async () => {
     try {
@@ -172,6 +178,16 @@ const VideoConverterImport = () => {
     }
     catch (error) {
       console.error(`${t("ErrorOpeningFolder!")}`, error);
+    }
+  });
+
+  const openLinkInBrowser = useCallback(async () => {
+    try {
+      const result = await window.electronAPI.openExternal(urlInfo);
+      console.log(`${t("Successfully")} ${result}`);
+    }
+    catch (error) {
+      console.error(`Error`, error);
     }
   });
 
@@ -290,6 +306,7 @@ const VideoConverterImport = () => {
   return (
     <>
       <RegionChoosingComponent />
+      <PersonaChoosing />
       <MergeComponent />
 
       <div className="video-import">
@@ -352,6 +369,12 @@ const VideoConverterImport = () => {
                 className={`btn btn--primary ${isProcessing ? 'is-disabled' : ''} `}
               >
                 {`📁 ${t("OpenFolder")}`}
+              </button>
+              <button
+                onClick={openLinkInBrowser}
+                className={`btn btn--primary`}
+              >
+                Информация о .usm файлах
               </button>
             </div>
           </div>

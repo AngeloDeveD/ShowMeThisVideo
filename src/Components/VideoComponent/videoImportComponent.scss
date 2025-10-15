@@ -114,14 +114,14 @@
         justify-content: center;
         grid-template-columns: repeat(2, minmax(0, 1fr));
 
-        >*:nth-child(3) {
-            grid-column: 1 / -1;
-            /* занимает всю строку */
-            justify-self: center;
-            /* центрируется */
-            width: 50%;
-            /* не растягивается */
-        }
+        // >*:nth-child(3) {
+        //     grid-column: 1 / -1;
+        //     /* занимает всю строку */
+        //     justify-self: center;
+        //     /* центрируется */
+        //     width: 50%;
+        //     /* не растягивается */
+        // }
     }
 
     &__back {
