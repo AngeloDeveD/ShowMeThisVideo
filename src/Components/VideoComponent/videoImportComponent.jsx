@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import RegionChoosingComponent from "../regionChosingComponent/regionChoosingComponent";
 import MergeComponent from "../mergeComponent/mergeComponent";
 import PersonaChoosing from "../personaChoosing/personaChoosing";
+import OpenFolderComponent from "../openFolderComponent/openFolderComponent";
 import "./videoImportComponent.scss";
 
 const STALL_MS = 3000;       // считаем, что застрял, если нет реального апдейта ≥ 3с
@@ -37,6 +38,7 @@ const VideoConverterImport = () => {
   const region = settings.region;
   const merged = settings.merged;
   const personaChoose = settings.personaChoose;
+  const openFolder = settings.openFolder;
 
   const navigate = useNavigate();
 
@@ -155,7 +157,7 @@ const VideoConverterImport = () => {
     setStatus(`${t("StatusStart")}...`);
 
     try {
-      const result = await window.electronAPI.executeCommand(file, filePath, region, merged, personaChoose);
+      const result = await window.electronAPI.executeCommand(file, filePath, region, merged, personaChoose, openFolder);
       setStatus(`${t("StatusDone")}`);
       setProgressRef(100);
       setOutput(`✅ ${t("CommandCompletedSuccessfully")}`);
@@ -302,12 +304,16 @@ const VideoConverterImport = () => {
   // Cleanup при размонтировании
   useEffect(() => () => clearTimers(), [clearTimers]);
 
+  useEffect(() => {
+    setUrlInfo(personaChoose === "P5R" ? "https://amicitia.miraheze.org/wiki/Persona_5_Royal/ps4_movieR.cpk" : "https://amicitia.miraheze.org/wiki/Persona_5/ps3.cpk/movie");
+  }, [personaChoose])
 
   return (
     <>
       <RegionChoosingComponent />
       <PersonaChoosing />
       <MergeComponent />
+      <OpenFolderComponent />
 
       <div className="video-import">
         <h1 className="video-import__title">{t("UsmFilesConverter")}</h1>
@@ -372,9 +378,10 @@ const VideoConverterImport = () => {
               </button>
               <button
                 onClick={openLinkInBrowser}
-                className={`btn btn--primary`}
+                className={`btn btn--primary ${personaChoose === "P4G" || personaChoose === "P3R" ? 'is-disabled' : ''}`}
+                disabled={personaChoose === "P4G" || personaChoose === "P3R"}
               >
-                Информация о .usm файлах
+                {t("InfoAboutUsmFiles")}
               </button>
             </div>
           </div>

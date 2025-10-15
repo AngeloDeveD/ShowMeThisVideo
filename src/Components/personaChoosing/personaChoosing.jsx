@@ -36,7 +36,8 @@ export default function PersonaChoosing() {
                         <option value="P5R">Persona 5 Royal</option>
                         <option value="P5">Persona 5</option>
                         <option value="P4G">Persona 4 Golden</option>
-                        <option value="P3R" disabled={true}>{"Persona 3 Reload (comming soon)"}</option>
+                        <option value="P3R" disabled={true}>{`Persona 3 Reload (${t("CommingSoon")})`}</option>
+                        <option value="Metaphor" disabled={true}>{`Metaphor: ReFantazio (${t("CommingSoon")})`}</option>
                     </select>
                 </form>
             </div>

@@ -7,6 +7,7 @@ const initialState = {
     region: 'jp',
     merged: false,
     personaChoose: 'P5R',
+    openFolder: true,
 };
 
 const settingsSlice = createSlice({
@@ -25,6 +26,9 @@ const settingsSlice = createSlice({
         setPersonaGame: (state, action) => {
             state.personaChoose = action.payload;
         },
+        setOpenFolder: (state, action) => {
+            state.openFolder = action.payload;
+        },
         resetSettings: () => initialState,
     },
 });
@@ -34,6 +38,7 @@ export const {
     setRegion,
     setMerged,
     setPersonaGame,
+    setOpenFolder,
     resetSettings,
 } = settingsSlice.actions;
 

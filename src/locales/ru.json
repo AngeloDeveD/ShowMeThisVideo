@@ -38,5 +38,8 @@
     "China": "Китай",
     "EU/US": "Европа/США",
     "SelectAnItem": "Выберите пункт",
-    "GameChoosing": "Выберите игру:"
+    "GameChoosing": "Выберите игру:",
+    "CommingSoon": "скоро",
+    "OpenFolderAfterCompletion": "Открыть папку после завершения",
+    "InfoAboutUsmFiles": "Информация о .usm файлах"
 }

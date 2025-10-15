@@ -11,6 +11,7 @@ export default function RegionChoosingComponent() {
     const { t } = useTranslation();
 
     const region = settings.region;
+    const personaChoose = settings.personaChoose;
 
     const HandleRegionSelector = (e) => {
         dispatch(setRegion(e.target.value));
@@ -31,6 +32,8 @@ export default function RegionChoosingComponent() {
                         value={settings.region}
                         onChange={HandleRegionSelector}
                         className="RegionForm__select"
+                        disabled={personaChoose !== "P5R"}
+                        style={{ cursor: `${personaChoose !== "P5R" ? 'not-allowed' : 'pointer'}` }}
                     >
                         <option value="JP">{t("Japan")}</option>
                         <option value="CN">{t("China")}</option>

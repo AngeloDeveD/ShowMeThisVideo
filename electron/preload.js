@@ -1,8 +1,9 @@
 // electron/preload.js
 const { contextBridge, ipcRenderer } = require('electron');
+const { opendir } = require('original-fs');
 
 contextBridge.exposeInMainWorld('electronAPI', {
-    executeCommand: (file, filePath, region, merged, personaChoose) => ipcRenderer.invoke('execute-command', file, filePath, region, merged, personaChoose),
+    executeCommand: (file, filePath, region, merged, personaChoose, openFolder) => ipcRenderer.invoke('execute-command', file, filePath, region, merged, personaChoose, openFolder),
 
     // Новый метод для диалога выбора файла
     selectFile: () => ipcRenderer.invoke('select-file'),

@@ -7,7 +7,7 @@ const fsPromises = require('fs').promises;
 
 function setupIpcHandlers() {
     // Обработчик выполнения команды
-    ipcMain.handle('execute-command', async (event, file, filePath, region, merged) => {
+    ipcMain.handle('execute-command', async (event, file, filePath, region, merged, personaChoose, openFolder) => {
         // helper: отправка прогресса
         const sendProgress = (percent, message) => {
             try { event.sender.send('task-progress', { percent, message }); } catch { }
@@ -35,6 +35,8 @@ function setupIpcHandlers() {
             const euMp4 = path.join(resultDir, `${fileName}_EU.mp4`);
             const jpMp4 = path.join(resultDir, `${fileName}_JP.mp4`);
 
+            const isP5R = personaChoose === 'P5R';
+
             let logMsg = '';
 
             const deleteIfExists = async (p) => {
@@ -55,38 +57,49 @@ function setupIpcHandlers() {
             console.log('Region:', region);
             console.log('Merge Video with Audio', merged);
             console.log(`File name: ${fileName}`);
+            console.log(`Choosed game: ${personaChoose}`);
+            console.log(`Is P5R? : ${isP5R}`);
 
-            // --- 1) ВИДЕО: crid_mod (только .m2v)
-            const [hexA, hexB] = getHexParamsForRegion(region); // порядок: A, B
+            // --- 1) P5R: ВИДЕО -> crid_mod (только .m2v)
             let videoOk = false;
+            const [hexA, hexB] = getHexParamsForRegion(region);
+            if (personaChoose === "P5R") {
+                const cridArgs = ['-b', hexA, '-a', hexB, '-v', filePath, '-o', resultFile];
+                console.log(`Command: ${decExePath} ${cridArgs.join(' ')}`);
+                sendProgress(8, 'Декодируем видео...');
+                try {
+                    await new Promise((resolve, reject) => {
+                        const p = spawn(decExePath, cridArgs, { cwd: resultDir });
+                        let out = '', err = '';
+                        p.stdout.on('data', d => { out += d.toString(); console.log('crid stdout:', d.toString()); });
+                        p.stderr.on('data', d => { err += d.toString(); console.log('crid stderr:', d.toString()); });
+                        p.on('close', code => code === 0 ? resolve(out) : reject(new Error(`crid_mod код ${code}\n${err || out}`)));
+                        p.on('error', e => reject(new Error(`Ошибка запуска crid_mod: ${e.message}`)));
+                    });
 
-            const cridArgs = ['-b', hexA, '-a', hexB, '-v', filePath, '-o', resultFile];
-            console.log(`Command: ${decExePath} ${cridArgs.join(' ')}`);
-            sendProgress(8, 'Декодируем видео...');
-
-            try {
-                await new Promise((resolve, reject) => {
-                    const p = spawn(decExePath, cridArgs, { cwd: resultDir });
-                    let out = '', err = '';
-                    p.stdout.on('data', d => { out += d.toString(); console.log('crid stdout:', d.toString()); });
-                    p.stderr.on('data', d => { err += d.toString(); console.log('crid stderr:', d.toString()); });
-                    p.on('close', code => code === 0 ? resolve(out) : reject(new Error(`crid_mod код ${code}\n${err || out}`)));
-                    p.on('error', e => reject(new Error(`Ошибка запуска crid_mod: ${e.message}`)));
-                });
-
-                await waitForFile(resultVideo);
-                console.log(`Файл создан: ${path.basename(resultVideo)}`);
-                logMsg += 'Видео успешно декодировано\n';
-                videoOk = true;
-            } catch (e) {
-                await cleanupFiles(resultVideo);
-                throw e;
+                    await waitForFile(resultVideo);
+                    console.log(`Файл создан: ${path.basename(resultVideo)}`);
+                    logMsg += 'Видео успешно декодировано\n';
+                    videoOk = true;
+                } catch (e) {
+                    await cleanupFiles(resultVideo);
+                    throw e;
+                }
+                sendProgress(25, 'Видео готово');
             }
-            sendProgress(25, 'Видео готово');
 
+
+            // --- 1) Другие части Persona: Аудио и видео UsmAudioCli -> получаем 1-2 .hca и 1 .m2v, затем переименовываем в USMXXX_EU/JP(.hca/.m2v)
             // --- 2) АУДИО: UsmAudioCli -> получаем 1-2 .hca, затем переименовываем в USMXXX_EU/JP.hca
             if (fs.existsSync(usmAudioCli)) {
-                const audioArgs = [filePath, '--out', resultDir, '--audio', '--split'];
+
+                const audioArgs = [
+                    filePath,
+                    '--out', resultDir,
+                    '--audio', !isP5R ? '--video' : '',
+                    '--split'
+                ]
+
                 console.log(`UsmAudioCli: ${usmAudioCli} ${audioArgs.join(' ')}`);
 
                 sendProgress(28, 'Извлекаем аудио...');
@@ -127,6 +140,33 @@ function setupIpcHandlers() {
                     renamed++;
                 }
                 logMsg += `Переименовано .hca: ${renamed}\n`;
+
+                if (!isP5R) {
+                    sendProgress(34, 'Приводим имя видео к базовому...');
+
+                    const entries = await fsPromises.readdir(resultDir, { withFileTypes: true });
+                    const m2vFiles = entries
+                        .filter(e => e.isFile())
+                        .map(e => e.name)
+                        .filter(n => n.toLowerCase().endsWith('.m2v'));
+
+                    // Цель: fileName.m2v
+                    const targetName = `${fileName}.m2v`;
+                    const targetPath = path.join(resultDir, targetName);
+
+                    if (!fs.existsSync(targetPath)) {
+                        const candidate =
+                            m2vFiles.find(n => n.startsWith(`${fileName}_`)) || // предпочитаем совпадение по префиксу
+                            m2vFiles.find(n => n.toLowerCase() === targetName.toLowerCase()) ||
+                            m2vFiles[0];
+
+                        if (candidate && candidate !== targetName) {
+                            await fsPromises.rename(path.join(resultDir, candidate), targetPath);
+                            console.log(`Переименован: ${candidate} -> ${targetName}`);
+                            logMsg += `Видео переименовано: ${candidate} -> ${targetName}\n`;
+                        }
+                    }
+                }
             } else {
                 console.warn(`UsmAudioCli не найден: ${usmAudioCli} — извлечение аудио пропущено`);
             }
@@ -134,62 +174,75 @@ function setupIpcHandlers() {
             // --- 3) .hca → .wav: hca2wav -b hexA -a hexB <HCA>
             // функция возвращает фактический путь к WAV, который появился
             async function hcaToWav(hcaPath, wantedWavPath, label) {
-                if (!fs.existsSync(hcaPath)) return null;
-                if (!fs.existsSync(hca2wav)) throw new Error(`Не найден hca2wav: ${hca2wav}`);
+                if (isP5R) {
+                    if (!fs.existsSync(hcaPath)) return null;
+                    if (!fs.existsSync(hca2wav)) throw new Error(`Не найден hca2wav: ${hca2wav}`);
 
-                sendProgress(label === 'EU' ? 50 : 60, `Расшифровываем ${label} аудио...`);
-                const args = ['-b', hexA, '-a', hexB, hcaPath];
-                console.log(`hca2wav: ${hca2wav} ${args.join(' ')}`);
+                    sendProgress(label === 'EU' ? 50 : 60, `Расшифровываем ${label} аудио...`);
+                    const args = ['-b', hexA, '-a', hexB, hcaPath];
+                    console.log(`hca2wav: ${hca2wav} ${args.join(' ')}`);
 
-                // время запуска — чтобы потом найти «свежий» WAV, если имя отличается
-                const startTs = Date.now();
+                    // время запуска — чтобы потом найти «свежий» WAV, если имя отличается
+                    const startTs = Date.now();
 
-                await new Promise((resolve, reject) => {
-                    const p = spawn(hca2wav, args, { cwd: resultDir });
-                    let out = '', err = '';
-                    p.stdout.on('data', d => { out += d.toString(); console.log('hca2wav stdout:', d.toString()); });
-                    p.stderr.on('data', d => { err += d.toString(); console.log('hca2wav stderr:', d.toString()); });
-                    p.on('close', code => code === 0 ? resolve(out) : reject(new Error(`hca2wav код ${code}\n${err || out}`)));
-                    p.on('error', e => reject(new Error(`Ошибка запуска hca2wav: ${e.message}`)));
-                });
+                    await new Promise((resolve, reject) => {
+                        const p = spawn(hca2wav, args, { cwd: resultDir });
+                        let out = '', err = '';
+                        p.stdout.on('data', d => { out += d.toString(); console.log('hca2wav stdout:', d.toString()); });
+                        p.stderr.on('data', d => { err += d.toString(); console.log('hca2wav stderr:', d.toString()); });
+                        p.on('close', code => code === 0 ? resolve(out) : reject(new Error(`hca2wav код ${code}\n${err || out}`)));
+                        p.on('error', e => reject(new Error(`Ошибка запуска hca2wav: ${e.message}`)));
+                    });
 
-                // 1) ожидаем «хотелку»
-                try {
-                    await waitForFile(wantedWavPath, 5, 400);
-                    return wantedWavPath;
-                } catch { }
+                    // 1) ожидаем «хотелку»
+                    try {
+                        await waitForFile(wantedWavPath, 5, 400);
+                        return wantedWavPath;
+                    } catch { }
 
-                // 2) часто тулза пишет рядом с .hca, просто заменяя расширение
-                const expectedByReplace = hcaPath.replace(/\.hca$/i, '.wav');
-                if (fs.existsSync(expectedByReplace)) {
-                    return expectedByReplace;
-                }
-
-                // 3) иной тулзы добавляют ".wav" к исходному имени
-                const expectedByAppend = `${hcaPath}.wav`;
-                if (fs.existsSync(expectedByAppend)) {
-                    return expectedByAppend;
-                }
-
-                // 4) как последний шанс — возьмём самый свежий .wav в resultDir после старта
-                const files = await fsPromises.readdir(resultDir);
-                let latest = null; let latestMtime = 0;
-                for (const n of files.filter(n => n.toLowerCase().endsWith('.wav'))) {
-                    const p = path.join(resultDir, n);
-                    const st = await fsPromises.stat(p);
-                    if (st.mtimeMs >= startTs && st.size > 0 && st.mtimeMs > latestMtime) {
-                        latest = p; latestMtime = st.mtimeMs;
+                    // 2) часто тулза пишет рядом с .hca, просто заменяя расширение
+                    const expectedByReplace = hcaPath.replace(/\.hca$/i, '.wav');
+                    if (fs.existsSync(expectedByReplace)) {
+                        return expectedByReplace;
                     }
-                }
-                if (latest) return latest;
 
-                throw new Error(`WAV не найден после hca2wav для ${path.basename(hcaPath)}`);
+                    // 3) иной тулзы добавляют ".wav" к исходному имени
+                    const expectedByAppend = `${hcaPath}.wav`;
+                    if (fs.existsSync(expectedByAppend)) {
+                        return expectedByAppend;
+                    }
+
+                    // 4) как последний шанс — возьмём самый свежий .wav в resultDir после старта
+                    const files = await fsPromises.readdir(resultDir);
+                    let latest = null; let latestMtime = 0;
+                    for (const n of files.filter(n => n.toLowerCase().endsWith('.wav'))) {
+                        const p = path.join(resultDir, n);
+                        const st = await fsPromises.stat(p);
+                        if (st.mtimeMs >= startTs && st.size > 0 && st.mtimeMs > latestMtime) {
+                            latest = p; latestMtime = st.mtimeMs;
+                        }
+                    }
+                    if (latest) return latest;
+
+                    throw new Error(`WAV не найден после hca2wav для ${path.basename(hcaPath)}`);
+                }
+
+                else {
+                    if (!fs.existsSync(hcaPath)) {
+                        console.warn(`HCA для ${label} не найден: ${hcaPath}`);
+                        return null;
+                    }
+                    sendProgress(label === 'EU' ? 50 : 60, `Используем ${label} аудио (.hca) без расшифровки`);
+                    console.log(`Пропускаем hca2wav (${label}), отдаём в ffmpeg: ${hcaPath}`);
+                    return hcaPath;
+                }
+
             }
 
-            if (merged === true) {
-                const euWavPath = await hcaToWav(euHca, euWavWanted, 'EU').catch(e => { console.warn(e.message); return null; });
-                const jpWavPath = await hcaToWav(jpHca, jpWavWanted, 'JP').catch(e => { console.warn(e.message); return null; });
+            const euWavPath = await hcaToWav(euHca, euWavWanted, 'EU').catch(e => { console.warn(e.message); return null; });
+            const jpWavPath = await hcaToWav(jpHca, jpWavWanted, 'JP').catch(e => { console.warn(e.message); return null; });
 
+            if (merged === true) {
                 async function muxToMp4(audioWavPath, outMp4, label) {
                     if (!audioWavPath || !fs.existsSync(audioWavPath)) return false;
                     sendProgress(label === 'EU' ? 70 : 80, `Собираем ${label}.mp4...`);
@@ -280,15 +333,18 @@ function setupIpcHandlers() {
                 await deleteIfExists(`${jpHca}.wav`);
 
             } else {
-                // --- merged === false: МЕРЖА НЕТ, чистим только .hca с текущим именем
-                sendProgress(45, 'Очистка .hca (merged=false)...');
-                await deleteIfExists(euHca);
-                await deleteIfExists(jpHca);
-                logMsg += 'Собранный mp4 не требуется (merged=false). Удалены только .hca\n';
+                if (isP5R) {
+                    // --- merged === false: МЕРЖА НЕТ, чистим только .hca с текущим именем
+                    sendProgress(45, `Очистка${isP5R ? ' .hca (merged=false)' : ''}...`);
+                    await deleteIfExists(euHca);
+                    await deleteIfExists(jpHca);
+                }
+
+                logMsg += `Собранный mp4 не требуется (merged=false).${isP5R ? "Удалены только .hca" : ''}\n`;
             }
             sendProgress(100, 'Готово');
 
-            await shell.openPath(resultDir);
+            if (openFolder) await shell.openPath(resultDir);
             return logMsg.trim();
 
         } catch (err) {
@@ -397,6 +453,10 @@ function setupIpcHandlers() {
             };
         }
         return null;
+    });
+
+    ipcMain.handle('open-url-browser', async (event, url) => {
+        await shell.openExternal(url);
     });
 }
 
