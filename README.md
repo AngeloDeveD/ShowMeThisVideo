@@ -3,12 +3,6 @@
 
 A specialized tool designed for analyzing and processing **containerized video assets** used in certain proprietary game engines, including formats found in the *Persona* game series.
 
-> ⚠️ **Disclaimer:**  
-> This project is not affiliated with, endorsed, or sponsored by ATLUS, SEGA, or any of their subsidiaries.  
-> It is provided strictly for **educational and research purposes**.  
-> No copyrighted game data, keys, or assets are included or distributed.  
-> Users are solely responsible for ensuring their use of this software complies with all applicable laws, EULAs, and copyright regulations.
-
 ---
 
 ## 🚀 Overview
@@ -97,13 +91,6 @@ If you selected the wrong file, just click **“Reset”** and pick another one.
 
 ---
 
-
-## 📜 License
-
-This project is licensed under the [MIT License](./LICENSE).
-
----
-
 ### 🧠 Notes
 
 This tool is intended for:
@@ -131,6 +118,18 @@ Special thanks to the developers of the following amazing tools used in this pro
 - [**VGAudioCli**](https://github.com/Thealexbarney/VGAudio) — library and CLI tool for handling various game audio formats.
 
 ---
+
+## 📜 License
+
+This project is licensed under the [MIT License](./LICENSE).
+
+---
+
+> ⚠️ **Disclaimer:**  
+> This project is not affiliated with, endorsed, or sponsored by ATLUS, SEGA, or any of their subsidiaries.  
+> It is provided strictly for **educational and research purposes**.  
+> No copyrighted game data, keys, or assets are included or distributed.  
+> Users are solely responsible for ensuring their use of this software complies with all applicable laws, EULAs, and copyright regulations.
 
 Please do **not** use it to distribute or modify proprietary game assets.
 
