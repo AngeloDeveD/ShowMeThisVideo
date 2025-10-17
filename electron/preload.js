@@ -1,6 +1,5 @@
 // electron/preload.js
 const { contextBridge, ipcRenderer } = require('electron');
-const { opendir } = require('original-fs');
 
 contextBridge.exposeInMainWorld('electronAPI', {
     executeCommand: (file, filePath, region, merged, personaChoose, openFolder) => ipcRenderer.invoke('execute-command', file, filePath, region, merged, personaChoose, openFolder),

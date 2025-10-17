@@ -18,6 +18,7 @@ ffprobe.exe*
 
 /result
 /src/crid/test_usm
+/release
 
 # Editor directories and files
 .vscode/*

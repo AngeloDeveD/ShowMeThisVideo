@@ -1,9 +1,22 @@
 // electron/ipcHandlers.js
-const { ipcMain, dialog, shell } = require('electron');
+const { ipcMain, dialog, shell, app } = require('electron');
 const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const fsPromises = require('fs').promises;
+
+function resolveToolsDir() {
+    return app.isPackaged
+        ? path.join(process.resourcesPath, 'tools')
+        : path.join(__dirname, '..', 'tools');
+}
+function resolveResultDir() {
+    try {
+        return path.join(app.getPath('documents'), 'Persona Video Converter', 'result');
+    } catch {
+        return path.join(app.getPath('userData'), 'result');
+    }
+}
 
 function setupIpcHandlers() {
     // Обработчик выполнения команды
@@ -14,13 +27,17 @@ function setupIpcHandlers() {
         };
         try {
             const fileName = file.name.toString().replace(/\.[^.]+$/, ''); // USMXXX
-            const tooldir = path.join(__dirname, '../tools');
-            const resultDir = path.join(__dirname, '../result');
+            //const tooldir = path.join(__dirname, '../tools');
+            //const resultDir = path.join(__dirname, '../result');
+            const tooldir = resolveToolsDir();
+            const resultDir = resolveResultDir();
 
             const decExePath = path.join(tooldir, './crid/crid_mod.exe');                 // видео из .usm
             const convExePath = path.join(tooldir, './ffmpeg/bin/ffmpeg.exe');             // ffmpeg
             const usmAudioCli = path.join(tooldir, './UsmAudioCli/UsmAudioCli.exe');       // .hca из .usm
             const hca2wav = path.join(tooldir, './deretore-toolkit/hca2wav.exe');      // .hca -> .wav
+
+            const keysJson = path.join(tooldir, 'keys', 'video_keys.json');
 
             const resultFile = path.join(resultDir, fileName);           // базовый префикс для crid_mod
             const resultVideo = path.join(resultDir, `${fileName}.m2v`);  // видео от crid_mod
@@ -62,14 +79,14 @@ function setupIpcHandlers() {
 
             // --- 1) P5R: ВИДЕО -> crid_mod (только .m2v)
             let videoOk = false;
-            const [hexA, hexB] = getHexParamsForRegion(region);
+            const [hexA, hexB] = getHexParamsForRegion(region, keysJson);
             if (personaChoose === "P5R") {
                 const cridArgs = ['-b', hexA, '-a', hexB, '-v', filePath, '-o', resultFile];
                 console.log(`Command: ${decExePath} ${cridArgs.join(' ')}`);
                 sendProgress(8, 'Декодируем видео...');
                 try {
                     await new Promise((resolve, reject) => {
-                        const p = spawn(decExePath, cridArgs, { cwd: resultDir });
+                        const p = spawn(decExePath, cridArgs, { cwd: resultDir, shell: false });
                         let out = '', err = '';
                         p.stdout.on('data', d => { out += d.toString(); console.log('crid stdout:', d.toString()); });
                         p.stderr.on('data', d => { err += d.toString(); console.log('crid stderr:', d.toString()); });
@@ -93,18 +110,21 @@ function setupIpcHandlers() {
             // --- 2) АУДИО: UsmAudioCli -> получаем 1-2 .hca, затем переименовываем в USMXXX_EU/JP.hca
             if (fs.existsSync(usmAudioCli)) {
 
-                const audioArgs = [
-                    filePath,
-                    '--out', resultDir,
-                    '--audio', !isP5R ? '--video' : '',
-                    '--split'
-                ]
+                // const audioArgs = [
+                //     filePath,
+                //     '--out', resultDir,
+                //     '--audio', !isP5R ? '--video' : '',
+                //     '--split'
+                // ]
+
+                const audioArgs = [filePath, '--out', resultDir, '--audio', '--split'];
+                if (personaChoose !== 'P5R') audioArgs.push('--video');
 
                 console.log(`UsmAudioCli: ${usmAudioCli} ${audioArgs.join(' ')}`);
 
                 sendProgress(28, 'Извлекаем аудио...');
                 await new Promise((resolve, reject) => {
-                    const p = spawn(usmAudioCli, audioArgs, { cwd: resultDir });
+                    const p = spawn(usmAudioCli, audioArgs, { cwd: resultDir, shell: false });
                     let out = '', err = '';
                     p.stdout.on('data', d => { out += d.toString(); console.log('UsmAudioCli stdout:', d.toString()); });
                     p.stderr.on('data', d => { err += d.toString(); console.log('UsmAudioCli stderr:', d.toString()); });
@@ -186,7 +206,7 @@ function setupIpcHandlers() {
                     const startTs = Date.now();
 
                     await new Promise((resolve, reject) => {
-                        const p = spawn(hca2wav, args, { cwd: resultDir });
+                        const p = spawn(hca2wav, args, { cwd: resultDir, shell: false });
                         let out = '', err = '';
                         p.stdout.on('data', d => { out += d.toString(); console.log('hca2wav stdout:', d.toString()); });
                         p.stderr.on('data', d => { err += d.toString(); console.log('hca2wav stderr:', d.toString()); });
@@ -288,7 +308,7 @@ function setupIpcHandlers() {
                     // Вспомогательная обёртка запуска
                     const runFfmpeg = (args) => new Promise((resolve, reject) => {
                         console.log(`FFmpeg: ${path.basename(resultVideo)} + ${path.basename(audioWavPath)} -> ${path.basename(outMp4)}`);
-                        const p = spawn(convExePath, args, { cwd: resultDir });
+                        const p = spawn(convExePath, args, { cwd: resultDir, shell: false });
                         let out = '', err = '';
                         p.stdout.on('data', d => { out += d.toString(); console.log('ffmpeg stdout:', d.toString()); });
                         p.stderr.on('data', d => { err += d.toString(); console.log('ffmpeg stderr:', d.toString()); });
@@ -394,9 +414,10 @@ function setupIpcHandlers() {
     }
 
     // Функция для получения HEX параметров из JSON
-    function getHexParamsForRegion(region) {
+    function getHexParamsForRegion(region, keysJson) {
         try {
-            const jsonPath = path.join(__dirname, '../tools/keys/video_keys.json');
+            //const jsonPath = path.join(__dirname, '../tools/keys/video_keys.json');
+            const jsonPath = keysJson;
 
             if (!fs.existsSync(jsonPath)) {
                 throw new Error(`JSON файл не найден: ${jsonPath}`);
@@ -422,11 +443,11 @@ function setupIpcHandlers() {
     }
 
     ipcMain.handle('open-result-dir', async () => {
-        const resultPath = path.join(__dirname, '../result');
-        await shell.openPath(resultPath).catch((e) => console.error("Директория не найдена", e));
-        console.log("Директория открыта")
+        const resultPath = resolveResultDir();
+        await fsPromises.mkdir(resultPath, { recursive: true });
+        await shell.openPath(resultPath);
         return null;
-    })
+    });
 
     // Обработчик выбора файла через диалог
     ipcMain.handle('select-file', async () => {

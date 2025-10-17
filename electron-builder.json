@@ -1,5 +1,5 @@
 {
-    "appId": "com.yourname.persona-video-converter",
+    "appId": "com.angelodeved.persona-video-converter",
     "productName": "Persona Video Converter",
     "directories": {
         "output": "release"
@@ -8,13 +8,37 @@
         "dist/**/*",
         "electron/**/*"
     ],
+    "extraResources": [
+        {
+            "from": "tools",
+            "to": "tools"
+        }
+    ],
     "mac": {
         "category": "public.app-category.video"
     },
     "win": {
-        "target": "nsis"
+        "target": [
+            {
+                "target": "msi",
+                "arch": [
+                    "x64"
+                ]
+            }
+        ]
+    },
+    "nsis": {
+        "oneClick": false,
+        "perMachine": false,
+        "allowToChangeInstallationDirectory": true,
+        "createDesktopShortcut": true,
+        "createStartMenuShortcut": true
     },
     "linux": {
         "target": "AppImage"
+    },
+    "compression": "maximum",
+    "asar": {
+        "smartUnpack": true
     }
 }

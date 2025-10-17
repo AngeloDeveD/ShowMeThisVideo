@@ -1,7 +1,9 @@
 const { app, BrowserWindow } = require('electron');
 const path = require('path');
 const { setupIpcHandlers } = require('./ipcHandlers');
-const { mainModule } = require('process');
+const fs = require('fs');
+//const { mainModule } = require('process');
+const { pathToFileURL } = require('url');
 const isDev = !app.isPackaged;
 
 function createWindow() {
@@ -24,8 +26,39 @@ function createWindow() {
         process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true';
         mainWindow.webContents.openDevTools();
     } else {
-        mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+        // ВАРИАНТ 1 (каноничный): путь внутри app.asar относительно __dirname
+        const fromAsar = path.resolve(__dirname, '..', 'dist', 'index.html');
+
+        // ВАРИАНТ 2 (альтернативный): путь через process.resourcesPath + app.asar
+        const fromResources = path.join(process.resourcesPath, 'app.asar', 'dist', 'index.html');
+
+        // Выбираем существующий
+        const indexHtml = fs.existsSync(fromAsar) ? fromAsar : fromResources;
+
+        // Логи — чтобы увидеть, что именно мы грузим
+        console.log('[BOOT] __dirname =', __dirname);
+        console.log('[BOOT] try indexHtml =', indexHtml, 'exists =', fs.existsSync(indexHtml));
+
+        // Грузим ИМЕННО ФАЙЛ, а не папку
+        mainWindow.loadFile(indexHtml);
     }
+
+    // // Логи консоли рендера:
+    // mainWindow.webContents.on('console-message', (_e, level, message, line, sourceId) => {
+    //     console.log(`[renderer:${level}] ${message} (${sourceId}:${line})`)
+    // })
+
+    // // Краш процесса рендера:
+    // mainWindow.webContents.on('render-process-gone', (_e, details) => {
+    //     console.error('[renderer gone]', details)
+    // })
+
+    // // На время отладки — открыть DevTools в проде:
+    // mainWindow.webContents.openDevTools({ mode: 'detach' })
+
+    mainWindow.webContents.on('did-fail-load', (_e, code, desc, url) => {
+        console.error('did-fail-load', code, desc, url);
+    });
 
     mainWindow.setMenuBarVisibility(false);
     //mainWindow.setMenu(null); -> MacOS
