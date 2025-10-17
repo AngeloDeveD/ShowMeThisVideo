@@ -1,5 +1,5 @@
 # Show Me This Video
-[Читать на русском](./README_RUS.md)
+[Читать на русском](./README_rus.md)
 
 A specialized tool designed for analyzing and processing **containerized video assets** used in certain proprietary game engines, including formats found in the *Persona* game series.
 
