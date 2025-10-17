@@ -117,6 +117,9 @@ Special thanks to the developers of the following amazing tools used in this pro
 - [**CRID Mode**](https://github.com/kokarare1212/CRID-usm-Decrypter) — tool for decrypting and working with `.usm` video files.  
 - [**VGAudioCli**](https://github.com/Thealexbarney/VGAudio) — library and CLI tool for handling various game audio formats.
 
+- And a very special thanks to [**Amicitia Wiki**](https://amicitia.miraheze.org/) — an incredible community-driven resource about Persona and Atlus game file structures.  
+Without it, developing this project would have been much more difficult.
+
 ---
 
 ## 📜 License
