@@ -19,8 +19,10 @@ ffprobe.exe*
 
 /result
 /release
-/tools
-/tools/crid/keys
+/tools/keys
+/tools/crid/my_results
+/tools/crid/source
+/tools/crid/crid_unpack
 
 # Editor directories and files
 .vscode/*
