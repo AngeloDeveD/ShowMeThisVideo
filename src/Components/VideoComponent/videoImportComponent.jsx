@@ -20,7 +20,12 @@ const VideoConverterImport = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [output, setOutput] = useState('');
 
-  const [urlInfo, setUrlInfo] = useState('https://amicitia.miraheze.org/wiki/Persona_5_Royal/ps4_movieR.cpk')
+  const links = useRef({
+    "P5R": "https://amicitia.miraheze.org/wiki/Persona_5_Royal/ps4_movieR.cpk",
+    "P5": "https://amicitia.miraheze.org/wiki/Persona_5/ps3.cpk/movie",
+    "P4G": '',
+    "P3R": "https://amicitia.miraheze.org/wiki/Persona_3_Reload/Anim"
+  })
 
   const [progress, setProgressRef] = useState(0);
   const [status, setStatus] = useState('');
@@ -45,6 +50,8 @@ const VideoConverterImport = () => {
   const { t } = useTranslation();
 
   const getFileName = (filePath) => filePath.split(/[\\/]/).pop();
+
+  const [urlInfo, setUrlInfo] = useState(personaChoose);
 
   const clearTimers = useCallback(() => {
     if (stallTimerRef.current) { clearTimeout(stallTimerRef.current); stallTimerRef.current = null; }
@@ -185,7 +192,7 @@ const VideoConverterImport = () => {
 
   const openLinkInBrowser = useCallback(async () => {
     try {
-      const result = await window.electronAPI.openExternal(urlInfo);
+      const result = await window.electronAPI.openExternal(links.current[urlInfo]);
       console.log(`${t("Successfully")} ${result}`);
     }
     catch (error) {
@@ -304,9 +311,7 @@ const VideoConverterImport = () => {
   // Cleanup при размонтировании
   useEffect(() => () => clearTimers(), [clearTimers]);
 
-  useEffect(() => {
-    setUrlInfo(personaChoose === "P5R" ? "https://amicitia.miraheze.org/wiki/Persona_5_Royal/ps4_movieR.cpk" : "https://amicitia.miraheze.org/wiki/Persona_5/ps3.cpk/movie");
-  }, [personaChoose])
+  useEffect(() => setUrlInfo(personaChoose), [personaChoose]);
 
   return (
     <>
@@ -378,8 +383,8 @@ const VideoConverterImport = () => {
               </button>
               <button
                 onClick={openLinkInBrowser}
-                className={`btn btn--primary ${personaChoose === "P4G" || personaChoose === "P3R" ? 'is-disabled' : ''}`}
-                disabled={personaChoose === "P4G" || personaChoose === "P3R"}
+                className={`btn btn--primary ${!links.current[urlInfo] ? 'is-disabled' : ''}`}
+                disabled={!links.current[urlInfo]}
               >
                 {t("InfoAboutUsmFiles")}
               </button>

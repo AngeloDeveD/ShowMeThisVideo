@@ -148,8 +148,8 @@ function setupIpcHandlers() {
                     const digits = m[2];
                     const secondChar = digits.charAt(1); // '0' | '1'
                     let tag = null;
-                    if (secondChar === '0') tag = 'EU';
-                    else if (secondChar === '1') tag = 'JP';
+                    if (secondChar === '0') tag = personaChoose === "P5R" ? 'EU' : 'JP';
+                    else if (secondChar === '1') tag = personaChoose === "P5R" ? 'JP' : 'EU';
                     if (!tag) continue;
 
                     const oldPath = path.join(resultDir, name);
